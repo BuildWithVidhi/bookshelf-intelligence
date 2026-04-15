@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BookScan — Reading Universe</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root {
+    --ink:      #0a0a0f;
+    --paper:    #f5f0e8;
+    --gold:     #c9a84c;
+    --gold-dim: #7a5e1e;
+    --ember:    #e85d3a;
+    --teal:     #2ec4b6;
+    --lavender: #9b72cf;
+    --slate:    #1a1a2e;
+    --mist:     rgba(245,240,232,0.06);
+    --panel:    rgba(10,10,15,0.92);
+    --border:   rgba(201,168,76,0.18);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--ink);
+    color: var(--paper);
+    font-family: 'JetBrains Mono', monospace;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  /* ── LAYOUT ─────────────────────────────────────────────────────────── */
+  #app { display: flex; height: 100vh; }
+
+  #sidebar {
+    width: 340px; min-width: 340px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    z-index: 10;
+  }
+
+  #main { flex: 1; position: relative; overflow: hidden; }
+
+  /* ── SIDEBAR HEADER ─────────────────────────────────────────────────── */
+  .sidebar-header {
+    padding: 24px 24px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    color: var(--gold);
+  }
+  .logo span { color: var(--paper); }
+  .subtitle {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: rgba(245,240,232,0.35);
+    margin-top: 4px;
+  }
+
+  /* ── CAMERA PANEL ───────────────────────────────────────────────────── */
+  #cam-panel { padding: 16px 24px; border-bottom: 1px solid var(--border); }
+
+  .cam-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #cam-img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .cam-offline {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; letter-spacing: 2px; color: rgba(245,240,232,0.3);
+    flex-direction: column; gap: 8px;
+  }
+  .cam-offline-icon { font-size: 28px; opacity: 0.4; }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+  .btn {
+    flex: 1; padding: 8px 12px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--paper);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all .2s;
+  }
+  .btn:hover { background: var(--mist); border-color: var(--gold); color: var(--gold); }
+  .btn.primary {
+    background: var(--gold); border-color: var(--gold);
+    color: var(--ink); font-weight: 500;
+  }
+  .btn.primary:hover { background: #e0ba5c; }
+  .btn.danger { border-color: var(--ember); color: var(--ember); }
+  .btn.danger:hover { background: rgba(232,93,58,0.12); }
+
+  /* ── SCAN RESULT TOAST ─────────────────────────────────────────────── */
+  #toast {
+    margin: 12px 24px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--mist);
+    display: none;
+    animation: slideIn .3s ease;
+  }
+  @keyframes slideIn {
+    from { transform: translateY(-8px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .toast-book { display: flex; gap: 12px; align-items: flex-start; }
+  .toast-cover {
+    width: 44px; height: 60px;
+    object-fit: cover;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+    border-radius: 2px;
+  }
+  .toast-cover-placeholder {
+    width: 44px; height: 60px;
+    background: rgba(201,168,76,0.1);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0; border-radius: 2px;
+  }
+  .toast-info { flex: 1; min-width: 0; }
+  .toast-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px; font-weight: 700;
+    color: var(--paper); line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .toast-author { font-size: 9px; color: var(--gold); margin-top: 3px; }
+  .toast-meta { font-size: 9px; color: rgba(245,240,232,0.4); margin-top: 4px; }
+  .confidence-bar {
+    height: 3px; background: rgba(245,240,232,0.08);
+    border-radius: 2px; margin-top: 8px; overflow: hidden;
+  }
+  .confidence-fill {
+    height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, var(--teal), var(--gold));
+    transition: width .5s ease;
+  }
+  .conf-label { font-size: 8px; color: var(--teal); margin-top: 3px; letter-spacing: 1px; }
+  .toast-actions { display: flex; gap: 6px; margin-top: 10px; }
+
+  /* ── LIBRARY LIST ──────────────────────────────────────────────────── */
+  #lib-panel {
+    flex: 1;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    border-top: 1px solid var(--border);
+  }
+  .lib-header {
+    padding: 12px 24px 8px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .lib-title { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: rgba(245,240,232,0.4); }
+  .lib-count {
+    font-size: 11px; color: var(--gold);
+    font-family: 'Playfair Display', serif;
+  }
+  #book-list {
+    flex: 1; overflow-y: auto;
+    padding: 0 24px 16px;
+  }
+  #book-list::-webkit-scrollbar { width: 3px; }
+  #book-list::-webkit-scrollbar-track { background: transparent; }
+  #book-list::-webkit-scrollbar-thumb { background: var(--gold-dim); border-radius: 2px; }
+
+  .book-item {
+    display: flex; gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(201,168,76,0.08);
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .book-item:hover { border-color: var(--border); }
+  .book-item:hover .book-item-title { color: var(--gold); }
+  .book-thumb {
+    width: 32px; height: 44px;
+    object-fit: cover; border-radius: 1px;
+    flex-shrink: 0;
+    border: 1px solid rgba(201,168,76,0.15);
+  }
+  .book-thumb-ph {
+    width: 32px; height: 44px;
+    background: rgba(201,168,76,0.06);
+    border: 1px solid rgba(201,168,76,0.1);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; flex-shrink: 0;
+  }
+  .book-item-info { flex: 1; min-width: 0; }
+  .book-item-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 11px; font-weight: 700; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--paper); transition: color .2s;
+  }
+  .book-item-author { font-size: 8px; color: rgba(245,240,232,0.4); margin-top: 2px; }
+  .book-item-genre {
+    display: inline-block; margin-top: 4px;
+    padding: 1px 6px;
+    border: 1px solid rgba(201,168,76,0.25);
+    border-radius: 10px;
+    font-size: 7px; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--gold-dim);
+  }
+  .conf-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    flex-shrink: 0; margin-top: 4px;
+  }
+
+  /* ── 3D CANVAS ─────────────────────────────────────────────────────── */
+  #three-canvas { position: absolute; inset: 0; }
+
+  /* ── TOP BAR ────────────────────────────────────────────────────────── */
+  #topbar {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 16px 28px;
+    display: flex; align-items: center; justify-content: space-between;
+    z-index: 5;
+    background: linear-gradient(to bottom, rgba(10,10,15,0.9) 0%, transparent 100%);
+    pointer-events: none;
+  }
+  .view-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 28px; font-weight: 900; font-style: italic;
+    color: var(--paper);
+    text-shadow: 0 0 40px rgba(201,168,76,0.3);
+  }
+  .view-hint {
+    font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+    color: rgba(245,240,232,0.3);
+  }
+
+  /* ── VIEW CONTROLS ──────────────────────────────────────────────────── */
+  #view-controls {
+    position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; z-index: 5;
+  }
+  .view-btn {
+    padding: 8px 20px;
+    border: 1px solid var(--border);
+    background: rgba(10,10,15,0.85);
+    color: rgba(245,240,232,0.5);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+    cursor: pointer; border-radius: 2px;
+    transition: all .25s;
+  }
+  .view-btn:hover { border-color: var(--gold); color: var(--gold); }
+  .view-btn.active {
+    background: var(--gold); border-color: var(--gold);
+    color: var(--ink); font-weight: 500;
+  }
+
+  /* ── TOOLTIP ────────────────────────────────────────────────────────── */
+  #tooltip {
+    position: absolute; display: none;
+    background: rgba(10,10,15,0.95);
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    border-radius: 3px;
+    pointer-events: none;
+    z-index: 20; max-width: 220px;
+    backdrop-filter: blur(10px);
+  }
+  .tt-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px; font-weight: 700; color: var(--paper);
+    margin-bottom: 4px;
+  }
+  .tt-author { font-size: 9px; color: var(--gold); margin-bottom: 6px; }
+  .tt-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tt-pill {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 8px; letter-spacing: 1px;
+    border: 1px solid;
+  }
+
+  /* ── CLUSTER LEGEND ─────────────────────────────────────────────────── */
+  #legend {
+    position: absolute; top: 80px; right: 24px;
+    z-index: 5;
+    background: rgba(10,10,15,0.85);
+    border: 1px solid var(--border);
+    padding: 14px 18px;
+    border-radius: 4px;
+    backdrop-filter: blur(10px);
+    min-width: 160px;
+    display: none;
+  }
+  .legend-title {
+    font-size: 8px; letter-spacing: 2px; text-transform: uppercase;
+    color: rgba(245,240,232,0.3); margin-bottom: 10px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 7px; cursor: pointer;
+  }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .legend-text { font-size: 9px; color: var(--paper); }
+  .legend-sub { font-size: 8px; color: rgba(245,240,232,0.4); }
+
+  /* ── STATS BAR ──────────────────────────────────────────────────────── */
+  #stats-bar {
+    position: absolute; bottom: 70px; right: 24px;
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 5;
+    pointer-events: none;
+  }
+  .stat-chip {
+    background: rgba(10,10,15,0.85);
+    border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 3px;
+    text-align: right; backdrop-filter: blur(8px);
+  }
+  .stat-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px; font-weight: 900; color: var(--gold);
+    line-height: 1;
+  }
+  .stat-label { font-size: 8px; letter-spacing: 2px; text-transform: uppercase; color: rgba(245,240,232,0.3); margin-top: 2px; }
+
+  /* ── PULSE RING ─────────────────────────────────────────────────────── */
+  @keyframes pulse { 0%,100%{opacity:.6;transform:scale(1)} 50%{opacity:1;transform:scale(1.05)} }
+  .scanning-pulse { animation: pulse 1.2s ease infinite; }
+
+  /* ── EMPTY STATE ────────────────────────────────────────────────────── */
+  #empty-state {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px; pointer-events: none;
+    transition: opacity .5s;
+  }
+  .empty-icon { font-size: 64px; opacity: 0.08; }
+  .empty-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px; font-weight: 400; font-style: italic;
+    color: rgba(245,240,232,0.15); text-align: center;
+    max-width: 280px; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ════════ SIDEBAR ════════ -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">Book<span>Scan</span></div>
+      <div class="subtitle">Reading Universe Visualizer</div>
+    </div>
+
+    <!-- Camera -->
+    <div id="cam-panel">
+      <div class="cam-wrap">
+        <img id="cam-img" src="/stream" alt="Camera feed"
+             onerror="this.style.display='none';document.getElementById('cam-offline').style.display='flex'"/>
+        <div id="cam-offline" class="cam-offline" style="display:none">
+          <div class="cam-offline-icon">📷</div>
+          <span>CAMERA OFFLINE</span>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="startCam()">Start</button>
+        <button class="btn" onclick="stopCam()">Stop</button>
+        <button class="btn primary scanning-pulse" id="snap-btn" onclick="snap()">⚡ Snap</button>
+      </div>
+    </div>
+
+    <!-- Scan result toast -->
+    <div id="toast"></div>
+
+    <!-- Library list -->
+    <div id="lib-panel">
+      <div class="lib-header">
+        <span class="lib-title">Library</span>
+        <span class="lib-count" id="lib-count">0 books</span>
+      </div>
+      <div id="book-list"></div>
+    </div>
+  </div>
+
+  <!-- ════════ MAIN 3D AREA ════════ -->
+  <div id="main">
+    <div id="topbar">
+      <div class="view-title" id="view-title">Reading Universe</div>
+      <div class="view-hint">DRAG TO ROTATE · SCROLL TO ZOOM</div>
+    </div>
+
+    <canvas id="three-canvas"></canvas>
+
+    <div id="empty-state">
+      <div class="empty-icon">📚</div>
+      <div class="empty-text">Scan your first book to begin building your reading universe</div>
+    </div>
+
+    <!-- View switcher -->
+    <div id="view-controls">
+      <button class="view-btn active" onclick="setView('cluster')" id="btn-cluster">Clusters</button>
+      <button class="view-btn" onclick="setView('genre')"   id="btn-genre">By Genre</button>
+      <button class="view-btn" onclick="setView('network')" id="btn-network">Network</button>
+      <button class="view-btn" onclick="setView('timeline')" id="btn-timeline">Timeline</button>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip"></div>
+
+    <!-- Cluster legend -->
+    <div id="legend"></div>
+
+    <!-- Stats -->
+    <div id="stats-bar">
+      <div class="stat-chip">
+        <div class="stat-num" id="stat-books">0</div>
+        <div class="stat-label">Books</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-num" id="stat-genres">0</div>
+        <div class="stat-label">Genres</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-num" id="stat-clusters">0</div>
+        <div class="stat-label">Clusters</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════════════════════════
+let library = [];
+let clusterData = null;
+let graphData = null;
+let currentView = 'cluster';
+let pendingBook = null;
+
+const CLUSTER_COLORS = [
+  "#FF6B6B","#4ECDC4","#45B7D1","#96CEB4",
+  "#FECA57","#FF9FF3","#54A0FF","#5F27CD"
+];
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  THREE.JS SETUP
+// ══════════════════════════════════════════════════════════════════════════════
+const canvas = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.018);
+
+const camera3d = new THREE.PerspectiveCamera(60, 1, 0.1, 500);
+camera3d.position.set(0, 0, 40);
+
+// Ambient + point lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+const ptLight1 = new THREE.PointLight(0xc9a84c, 2, 100);
+ptLight1.position.set(20, 20, 20);
+scene.add(ptLight1);
+const ptLight2 = new THREE.PointLight(0x2ec4b6, 1.5, 80);
+ptLight2.position.set(-20, -10, 10);
+scene.add(ptLight2);
+
+// Star field background
+(function() {
+  const geo = new THREE.BufferGeometry();
+  const n = 1200;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n * 3; i++) pos[i] = (Math.random() - 0.5) * 300;
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.15, transparent: true, opacity: 0.5 });
+  scene.add(new THREE.Points(geo, mat));
+})();
+
+// Orbit controls (manual — no external dep)
+let isDragging = false, prevMouse = { x: 0, y: 0 };
+let spherical = { theta: 0, phi: Math.PI / 2, r: 40 };
+let targetSpherical = { ...spherical };
+
+canvas.addEventListener('mousedown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
+window.addEventListener('mouseup', () => isDragging = false);
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const dx = (e.clientX - prevMouse.x) * 0.008;
+  const dy = (e.clientY - prevMouse.y) * 0.008;
+  prevMouse = { x: e.clientX, y: e.clientY };
+  targetSpherical.theta -= dx;
+  targetSpherical.phi = Math.max(0.2, Math.min(Math.PI - 0.2, targetSpherical.phi - dy));
+});
+canvas.addEventListener('wheel', e => {
+  targetSpherical.r = Math.max(8, Math.min(120, targetSpherical.r + e.deltaY * 0.05));
+});
+
+// Raycasting for tooltip
+const raycaster = new THREE.Raycaster();
+const mouse2d = new THREE.Vector2();
+let bookMeshes = [];
+let hoveredMesh = null;
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouse2d.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+  mouse2d.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse2d, camera3d);
+  const hits = raycaster.intersectObjects(bookMeshes);
+  const tooltip = document.getElementById('tooltip');
+
+  if (hits.length > 0) {
+    const mesh = hits[0].object;
+    const book = mesh.userData.book;
+    if (mesh !== hoveredMesh) {
+      hoveredMesh = mesh;
+      tooltip.style.display = 'block';
+    }
+    tooltip.style.left = (e.clientX - canvas.getBoundingClientRect().left + 14) + 'px';
+    tooltip.style.top  = (e.clientY - canvas.getBoundingClientRect().top  - 10) + 'px';
+    tooltip.innerHTML = `
+      <div class="tt-title">${book.title}</div>
+      <div class="tt-author">${(book.authors||[]).join(', ')}</div>
+      <div class="tt-pills">
+        <span class="tt-pill" style="color:${book.cluster_color||'#c9a84c'};border-color:${book.cluster_color||'#c9a84c'}33">${book.genre||'?'}</span>
+        ${book.year ? `<span class="tt-pill" style="color:#2ec4b6;border-color:#2ec4b633">${book.year}</span>` : ''}
+        ${book.confidence ? `<span class="tt-pill" style="color:#9b72cf;border-color:#9b72cf33">${Math.round(book.confidence*100)}% match</span>` : ''}
+      </div>`;
+  } else {
+    hoveredMesh = null;
+    tooltip.style.display = 'none';
+  }
+});
+
+function resizeRenderer() {
+  const w = canvas.parentElement.offsetWidth;
+  const h = canvas.parentElement.offsetHeight;
+  renderer.setSize(w, h);
+  camera3d.aspect = w / h;
+  camera3d.updateProjectionMatrix();
+}
+window.addEventListener('resize', resizeRenderer);
+resizeRenderer();
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SCENE BUILDING
+// ══════════════════════════════════════════════════════════════════════════════
+let sceneGroup = new THREE.Group();
+scene.add(sceneGroup);
+
+function clearScene() {
+  sceneGroup.clear();
+  bookMeshes = [];
+}
+
+function hexToThree(hex) {
+  return new THREE.Color(hex);
+}
+
+function makeBookSphere(book, pos, radius = 0.8) {
+  const color = hexToThree(book.cluster_color || '#c9a84c');
+  const geo = new THREE.SphereGeometry(radius, 20, 20);
+
+  // Glow effect: slightly larger transparent shell
+  const shellGeo = new THREE.SphereGeometry(radius * 1.4, 16, 16);
+  const shellMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.08, side: THREE.BackSide
+  });
+  const shell = new THREE.Mesh(shellGeo, shellMat);
+
+  const mat = new THREE.MeshPhongMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 0.15,
+    shininess: 80,
+    transparent: true,
+    opacity: 0.92,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(...pos);
+  mesh.userData.book = book;
+  mesh.userData.origScale = 1;
+
+  shell.position.set(...pos);
+
+  sceneGroup.add(shell);
+  sceneGroup.add(mesh);
+  bookMeshes.push(mesh);
+  return mesh;
+}
+
+function makeEdge(p1, p2, color = 0x333355, opacity = 0.25) {
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(...p1),
+    new THREE.Vector3(...p2)
+  ]);
+  sceneGroup.add(new THREE.Line(geo, mat));
+}
+
+function makeLabel(text, pos, color = '#c9a84c', size = 0.6) {
+  // Use a sprite with canvas texture for text labels
+  const cvs = document.createElement('canvas');
+  cvs.width = 256; cvs.height = 64;
+  const ctx = cvs.getContext('2d');
+  ctx.clearRect(0, 0, 256, 64);
+  ctx.font = 'bold 22px "Playfair Display", serif';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text.substring(0, 20), 128, 32);
+  const tex = new THREE.CanvasTexture(cvs);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.position.set(pos[0], pos[1] + 1.5, pos[2]);
+  sprite.scale.set(4, 1, 1);
+  sceneGroup.add(sprite);
+}
+
+// ── VIEW: CLUSTER (KMeans 3D) ──────────────────────────────────────────────
+function buildClusterView(data) {
+  clearScene();
+  if (!data || !data.books || data.books.length === 0) return;
+
+  const books = data.books;
+  const clusterInfo = data.cluster_info || {};
+  const k = data.k || 1;
+
+  // Arrange clusters in a sphere-of-spheres layout
+  const clusterCenters = {};
+  for (let c = 0; c < k; c++) {
+    const phi   = Math.acos(-1 + (2 * c) / Math.max(k - 1, 1));
+    const theta = Math.sqrt(k * Math.PI) * phi;
+    const R = k > 1 ? 14 : 0;
+    clusterCenters[c] = [
+      R * Math.sin(phi) * Math.cos(theta),
+      R * Math.sin(phi) * Math.sin(theta),
+      R * Math.cos(phi)
+    ];
+  }
+
+  // Count books per cluster for spacing
+  const clusterBuckets = {};
+  books.forEach(b => {
+    const c = b.cluster || 0;
+    (clusterBuckets[c] = clusterBuckets[c] || []).push(b);
+  });
+
+  const positions = {};
+  Object.entries(clusterBuckets).forEach(([c, bks]) => {
+    const center = clusterCenters[c] || [0, 0, 0];
+    bks.forEach((b, i) => {
+      const phi   = Math.acos(-1 + (2 * i) / Math.max(bks.length - 1, 1));
+      const theta = Math.sqrt(bks.length * Math.PI) * phi;
+      const r = Math.min(3 + bks.length * 0.4, 8);
+      positions[b.id] = [
+        center[0] + r * Math.sin(phi) * Math.cos(theta),
+        center[1] + r * Math.sin(phi) * Math.sin(theta),
+        center[2] + r * Math.cos(phi),
+      ];
+      makeBookSphere(b, positions[b.id],
+        0.5 + (b.confidence || 0.5) * 0.6);
+    });
+
+    // Cluster centroid marker
+    const ci = clusterInfo[c];
+    if (ci) {
+      const cgeo = new THREE.SphereGeometry(1.8, 12, 12);
+      const col = hexToThree(CLUSTER_COLORS[parseInt(c) % CLUSTER_COLORS.length]);
+      const cmat = new THREE.MeshBasicMaterial({ color: col, wireframe: true, transparent: true, opacity: 0.15 });
+      const cm = new THREE.Mesh(cgeo, cmat);
+      cm.position.set(...center);
+      sceneGroup.add(cm);
+      makeLabel(`#${parseInt(c)+1} ${ci.top_genre}`, center, CLUSTER_COLORS[parseInt(c) % CLUSTER_COLORS.length]);
+    }
+  });
+
+  // Draw intra-cluster edges
+  books.forEach((b, i) => {
+    books.slice(i + 1).forEach(b2 => {
+      if (b.cluster === b2.cluster && positions[b.id] && positions[b2.id]) {
+        const col = CLUSTER_COLORS[(b.cluster || 0) % CLUSTER_COLORS.length];
+        makeEdge(positions[b.id], positions[b2.id],
+          parseInt(col.slice(1), 16), 0.12);
+      }
+    });
+  });
+
+  // Update legend
+  updateLegend(clusterInfo);
+  updateStats(books.length, new Set(books.map(b => b.genre)).size, k);
+}
+
+// ── VIEW: GENRE ORBITS ──────────────────────────────────────────────────────
+function buildGenreView(books) {
+  clearScene();
+  if (!books.length) return;
+
+  const genreMap = {};
+  books.forEach(b => (genreMap[b.genre] = genreMap[b.genre] || []).push(b));
+  const genres = Object.keys(genreMap);
+
+  genres.forEach((genre, gi) => {
+    const bks = genreMap[genre];
+    const phi = (gi / genres.length) * Math.PI * 2;
+    const R = 12;
+    const cx = R * Math.cos(phi), cz = R * Math.sin(phi);
+    const col = CLUSTER_COLORS[gi % CLUSTER_COLORS.length];
+
+    bks.forEach((b, i) => {
+      const ang = (i / bks.length) * Math.PI * 2;
+      const r2 = 3 + bks.length * 0.5;
+      const pos = [cx + r2 * Math.cos(ang), (Math.random() - 0.5) * 6, cz + r2 * Math.sin(ang)];
+      b.cluster_color = col;
+      makeBookSphere(b, pos);
+    });
+    makeLabel(genre, [cx, 5, cz], col);
+  });
+
+  document.getElementById('legend').style.display = 'none';
+  updateStats(books.length, genres.length, genres.length);
+}
+
+// ── VIEW: NETWORK ───────────────────────────────────────────────────────────
+function buildNetworkView(data, books) {
+  clearScene();
+  if (!books.length) return;
+
+  const bookMap = {};
+  books.forEach(b => bookMap[b.id] = b);
+
+  // Force-directed-ish: place randomly, pull connected nodes together
+  const positions = {};
+  books.forEach(b => {
+    b.cluster_color = b.cluster_color || '#c9a84c';
+    positions[b.id] = [
+      (Math.random() - 0.5) * 30,
+      (Math.random() - 0.5) * 30,
+      (Math.random() - 0.5) * 30,
+    ];
+    makeBookSphere(b, positions[b.id]);
+  });
+
+  (data.edges || []).forEach(e => {
+    if (positions[e.source] && positions[e.target]) {
+      const col = e.type === 'author' ? 0x9b72cf : 0x2ec4b6;
+      makeEdge(positions[e.source], positions[e.target], col, 0.3);
+    }
+  });
+
+  document.getElementById('legend').style.display = 'none';
+  updateStats(books.length, new Set(books.map(b => b.genre)).size, '-');
+}
+
+// ── VIEW: TIMELINE ───────────────────────────────────────────────────────────
+function buildTimelineView(books) {
+  clearScene();
+  if (!books.length) return;
+
+  const sorted = [...books].filter(b => b.year).sort((a, b) => a.year - b.year);
+  if (!sorted.length) { buildClusterView(clusterData); return; }
+
+  const minY = parseInt(sorted[0].year), maxY = parseInt(sorted[sorted.length-1].year);
+  const span = maxY - minY || 1;
+
+  // Year axis
+  const axGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-20, 0, 0), new THREE.Vector3(20, 0, 0)
+  ]);
+  sceneGroup.add(new THREE.Line(axGeo, new THREE.LineBasicMaterial({ color: 0x333344 })));
+
+  sorted.forEach((b, i) => {
+    const x = ((parseInt(b.year) - minY) / span) * 38 - 19;
+    const col = CLUSTER_COLORS[i % CLUSTER_COLORS.length];
+    b.cluster_color = col;
+    const jitterY = (Math.random() - 0.5) * 8;
+    const jitterZ = (Math.random() - 0.5) * 8;
+    makeBookSphere(b, [x, jitterY, jitterZ]);
+  });
+
+  // Year labels at start / mid / end
+  [minY, Math.round((minY + maxY) / 2), maxY].forEach(yr => {
+    const x = ((yr - minY) / span) * 38 - 19;
+    makeLabel(String(yr), [x, -6, 0], '#c9a84c55');
+  });
+
+  document.getElementById('legend').style.display = 'none';
+  updateStats(sorted.length, new Set(sorted.map(b => b.genre)).size, '-');
+}
+
+function updateLegend(clusterInfo) {
+  const leg = document.getElementById('legend');
+  if (!clusterInfo || Object.keys(clusterInfo).length === 0) { leg.style.display='none'; return; }
+  leg.style.display = 'block';
+  leg.innerHTML = `<div class="legend-title">Reading Clusters</div>` +
+    Object.entries(clusterInfo).map(([c, info]) => `
+      <div class="legend-item">
+        <div class="legend-dot" style="background:${info.color}"></div>
+        <div>
+          <div class="legend-text">Cluster ${parseInt(c)+1} — ${info.top_genre}</div>
+          <div class="legend-sub">${info.size} books · ${info.top_author}</div>
+        </div>
+      </div>`).join('');
+}
+
+function updateStats(books, genres, clusters) {
+  document.getElementById('stat-books').textContent = books;
+  document.getElementById('stat-genres').textContent = genres;
+  document.getElementById('stat-clusters').textContent = clusters;
+  document.getElementById('empty-state').style.opacity = books > 0 ? 0 : 1;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  VIEW SWITCHING
+// ══════════════════════════════════════════════════════════════════════════════
+const VIEW_TITLES = {
+  cluster: 'Reading Clusters', genre: 'Genre Orbits',
+  network: 'Book Network', timeline: 'Reading Timeline'
+};
+
+function setView(v) {
+  currentView = v;
+  document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + v).classList.add('active');
+  document.getElementById('view-title').textContent = VIEW_TITLES[v];
+  rebuildScene();
+}
+
+function rebuildScene() {
+  if (!library.length) { clearScene(); return; }
+  if (currentView === 'cluster' && clusterData) {
+    buildClusterView(clusterData);
+  } else if (currentView === 'genre') {
+    const books = (clusterData?.books || library).map(b => ({...b}));
+    buildGenreView(books);
+  } else if (currentView === 'network' && graphData) {
+    buildNetworkView(graphData, clusterData?.books || library);
+  } else if (currentView === 'timeline') {
+    buildTimelineView(clusterData?.books || library);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ══════════════════════════════════════════════════════════════════════════════
+let t = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  t += 0.005;
+
+  // Smooth camera
+  spherical.theta += (targetSpherical.theta - spherical.theta) * 0.08;
+  spherical.phi   += (targetSpherical.phi   - spherical.phi)   * 0.08;
+  spherical.r     += (targetSpherical.r     - spherical.r)     * 0.08;
+
+  camera3d.position.set(
+    spherical.r * Math.sin(spherical.phi) * Math.cos(spherical.theta),
+    spherical.r * Math.cos(spherical.phi),
+    spherical.r * Math.sin(spherical.phi) * Math.sin(spherical.theta),
+  );
+  camera3d.lookAt(0, 0, 0);
+
+  // Gentle auto-rotate when idle
+  if (!isDragging) targetSpherical.theta += 0.0008;
+
+  // Pulse hovered mesh
+  bookMeshes.forEach(m => {
+    const s = m === hoveredMesh ? 1.35 + Math.sin(t * 5) * 0.07 : 1.0;
+    m.scale.setScalar(s + (m.scale.x - s) * 0.1); // smooth
+    if (m === hoveredMesh) {
+      m.material.emissiveIntensity = 0.5 + Math.sin(t * 5) * 0.2;
+    } else {
+      m.material.emissiveIntensity += (0.15 - m.material.emissiveIntensity) * 0.1;
+    }
+  });
+
+  // Orbit lights
+  ptLight1.position.x = Math.sin(t * 0.4) * 25;
+  ptLight1.position.z = Math.cos(t * 0.4) * 25;
+
+  renderer.render(scene, camera3d);
+}
+animate();
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  API CALLS
+// ══════════════════════════════════════════════════════════════════════════════
+async function fetchLibrary() {
+  try {
+    const r = await fetch('/api/library');
+    const d = await r.json();
+    library = d.books || [];
+    renderLibraryList();
+  } catch(e) {}
+}
+
+async function fetchClusterData() {
+  try {
+    const r = await fetch('/api/cluster');
+    clusterData = await r.json();
+  } catch(e) { clusterData = null; }
+}
+
+async function fetchGraphData() {
+  try {
+    const r = await fetch('/api/graph-data');
+    graphData = await r.json();
+  } catch(e) { graphData = null; }
+}
+
+async function refreshAll() {
+  await fetchLibrary();
+  await Promise.all([fetchClusterData(), fetchGraphData()]);
+  rebuildScene();
+}
+
+function startCam() { fetch('/api/camera/start', {method:'POST'}); }
+function stopCam()  { fetch('/api/camera/stop',  {method:'POST'}); }
+function snap()     { fetch('/api/snap', {method:'POST'}); }
+
+async function confirmBook(overrides={}) {
+  const r = await fetch('/api/confirm', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(overrides)
+  });
+  const d = await r.json();
+  hidePendingToast();
+  if (d.status === 'added') await refreshAll();
+}
+
+async function rejectBook() {
+  await fetch('/api/reject', {method:'POST'});
+  hidePendingToast();
+}
+
+async function deleteBook(id) {
+  await fetch(`/api/library/${id}`, {method:'DELETE'});
+  await refreshAll();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SCAN RESULT POLLING
+// ══════════════════════════════════════════════════════════════════════════════
+let pollTimer;
+function startPolling() {
+  pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/scan-result');
+      const d = await r.json();
+      if (d.status === 'found') {
+        pendingBook = d.book;
+        showPendingToast(d.book);
+      } else if (d.status === 'duplicate') {
+        showInfoToast('Already in library', d.book?.title || '');
+      } else if (d.status === 'not_found') {
+        showInfoToast('No book detected', 'Try better lighting or hold steady');
+      }
+    } catch(e) {}
+  }, 900);
+}
+
+function showPendingToast(book) {
+  const toast = document.getElementById('toast');
+  const coverHtml = book.cover_url
+    ? `<img class="toast-cover" src="${book.cover_url}" onerror="this.style.display='none'" />`
+    : `<div class="toast-cover-placeholder">📖</div>`;
+  const confPct = Math.round((book.confidence||0) * 100);
+  const confColor = confPct >= 60 ? '#2ec4b6' : confPct >= 35 ? '#c9a84c' : '#e85d3a';
+
+  toast.innerHTML = `
+    <div class="toast-book">
+      ${coverHtml}
+      <div class="toast-info">
+        <div class="toast-title">${book.title}</div>
+        <div class="toast-author">${(book.authors||[]).join(', ')}</div>
+        <div class="toast-meta">${book.genre} · ${book.year||'?'} · ${book.page_count||'?'}pp</div>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width:${confPct}%;background:linear-gradient(90deg,${confColor},${confColor}88)"></div>
+        </div>
+        <div class="conf-label" style="color:${confColor}">${confPct}% MATCH CONFIDENCE</div>
+      </div>
+    </div>
+    <div class="toast-actions">
+      <button class="btn primary" onclick="confirmBook()">✓ Add to Library</button>
+      <button class="btn danger"  onclick="rejectBook()">✕ Reject</button>
+    </div>`;
+  toast.style.display = 'block';
+}
+
+function showInfoToast(title, sub) {
+  const toast = document.getElementById('toast');
+  toast.innerHTML = `
+    <div style="font-size:10px;color:rgba(245,240,232,0.5);letter-spacing:1px">${title}</div>
+    <div style="font-size:9px;color:rgba(245,240,232,0.25);margin-top:4px">${sub}</div>`;
+  toast.style.display = 'block';
+  setTimeout(() => { if (!pendingBook) toast.style.display = 'none'; }, 3000);
+}
+
+function hidePendingToast() {
+  pendingBook = null;
+  document.getElementById('toast').style.display = 'none';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  LIBRARY LIST RENDER
+// ══════════════════════════════════════════════════════════════════════════════
+function renderLibraryList() {
+  const list = document.getElementById('book-list');
+  document.getElementById('lib-count').textContent = library.length + ' book' + (library.length !== 1 ? 's' : '');
+
+  if (!library.length) {
+    list.innerHTML = `<div style="font-size:9px;color:rgba(245,240,232,0.2);text-align:center;padding:24px 0">No books yet</div>`;
+    return;
+  }
+
+  list.innerHTML = library.slice().reverse().map(b => {
+    const conf = b.confidence || 0;
+    const dotColor = conf >= 0.6 ? '#2ec4b6' : conf >= 0.35 ? '#c9a84c' : '#e85d3a';
+    const thumb = b.cover_url
+      ? `<img class="book-thumb" src="${b.cover_url}" onerror="this.parentNode.innerHTML='<div class=book-thumb-ph>📖</div>'" />`
+      : `<div class="book-thumb-ph">📖</div>`;
+    return `
+      <div class="book-item" onclick="focusBook('${b.id}')">
+        ${thumb}
+        <div class="book-item-info">
+          <div class="book-item-title">${b.title}</div>
+          <div class="book-item-author">${(b.authors||[]).join(', ')}</div>
+          <span class="book-item-genre">${b.genre}</span>
+        </div>
+        <div class="conf-dot" style="background:${dotColor}" title="${Math.round(conf*100)}% confidence"></div>
+      </div>`;
+  }).join('');
+}
+
+function focusBook(id) {
+  // Highlight in 3D
+  const mesh = bookMeshes.find(m => m.userData.book?.id === id);
+  if (mesh) {
+    const p = mesh.position;
+    targetSpherical.r = 20;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════════════════════════
+refreshAll();
+startPolling();
+</script>
+</body>
+</html>
